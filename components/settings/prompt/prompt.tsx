@@ -13,7 +13,7 @@ export default function PromptSettings() {
   } = useSettings();
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-4">
       <div className="space-y-2">
         <label className="text-sm font-medium">选择预设人格</label>
         <div className="grid gap-2 -mx-3 w-[calc(100%+1.5rem)] md:translate-x-0 md:w-full">

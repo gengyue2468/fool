@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
+    "@upstash/redis": "^1.35.7",
     "axios": "^1.13.2",
+    "dayjs": "^1.11.19",
     "katex": "^0.16.25",
     "mathjax": "^4.0.0",
     "motion": "^12.23.24",
@@ -22,6 +24,7 @@
     "react-dom": "19.2.0",
     "react-markdown": "^10.1.0",
     "react-markdown-preview": "^1.1.1",
+    "react-textarea-autosize": "^8.5.9",
     "rehype-highlight": "^7.0.2",
     "rehype-katex": "^7.0.1",
     "rehype-mathjax": "^7.1.0",

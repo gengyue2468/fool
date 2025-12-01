@@ -10,6 +10,7 @@ import "./highlight.css";
 import Hero from "@/components/hero/hero";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ThemeProvider } from "next-themes";
+import dayjs from "dayjs";
 
 const notoSerifSC = Noto_Serif_SC({
   variable: "--font-noto-serif-sc",
@@ -53,8 +54,17 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <SettingsProvider>
-            <Hero />
-            <main>{children}</main>
+            <div className="flex flex-col min-h-screen">
+              <Hero />
+              <main className="flex-1 flex justify-center items-center w-full">
+                {children}
+              </main>
+              <footer className="text-center py-8 text-xs opacity-50">
+                © {dayjs().year()} Made with ❤️ by{" "}
+                <a href="https://gengyue.site/" className="underline">Yue Geng</a>. LLM models
+                provided by <a href="https://ppio.com/" className="underline">PPIO</a>.
+              </footer>
+            </div>
           </SettingsProvider>
         </ThemeProvider>
       </body>

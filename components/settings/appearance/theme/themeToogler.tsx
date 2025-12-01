@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 const themes = [
   { value: "light", label: "浅色", icon: SunIcon },
   { value: "dark", label: "深色", icon: MoonIcon },
-  { value: "system", label: "跟随系统", icon: SystemIcon },
+  { value: "system", label: "系统", icon: SystemIcon },
 ];
 
 export default function ThemeToggler() {
@@ -29,7 +29,7 @@ export default function ThemeToggler() {
 
   return (
     <Select.Root value={theme} onValueChange={setTheme}>
-      <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 transition-colors min-w-32 cursor-pointer outline-none">
+      <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 transition-colors cursor-pointer outline-none">
         <span className="flex items-center gap-2">
           <currentTheme.icon className="size-4" />
           <Select.Value>{currentTheme.label}</Select.Value>
@@ -41,7 +41,7 @@ export default function ThemeToggler() {
 
       <Select.Portal>
         <Select.Content
-          className="overflow-hidden rounded-xl bg-neutral-200 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 z-50"
+          className="overflow-hidden rounded-xl bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 z-50"
           position="popper"
           sideOffset={4}
         >
@@ -50,7 +50,7 @@ export default function ThemeToggler() {
               <Select.Item
                 key={t.value}
                 value={t.value}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer outline-none data-[highlighted]:bg-neutral-300 dark:data-[highlighted]:bg-neutral-700 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer outline-none data-[highlighted]:bg-neutral-200 dark:data-[highlighted]:bg-neutral-700 transition-colors"
               >
                 <t.icon className="size-4" />
                 <Select.ItemText>{t.label}</Select.ItemText>

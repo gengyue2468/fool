@@ -1,3 +1,4 @@
+/* eslint-disable prefer-const */
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -148,20 +149,27 @@ function normalizeMathNotation(content: string): string {
   // 修复可能的格式问题：$$ 和 $ 之间的空格
   result = result.replace(/\$\$\s+/g, "$$");
   result = result.replace(/\s+\$\$/g, "$$");
+  // 修复行内数学公式的空格问题
+  result = result.replace(/\$\s+/g, "$");
+  result = result.replace(/\s+\$/g, "$");
 
   // 处理转义的反斜杠：将 \\\( 和 \\\[ 转换为 \( 和 \[
   // 这样可以处理在 markdown 中被转义的 LaTeX 语法
-  // 使用纯字符串操作，避免正则转义问题
-  // 在字符串中：\\ 表示一个反斜杠，所以 \\\\( 表示两个反斜杠 + 左括号
-  // 使用 split/join 方法处理所有情况
-  result = result.split("\\\\( ").join("\\(");
-  result = result.split("\\\\[ ").join("\\[");
+  // 需要处理多种转义情况：\\\(, \\\\\(, 等等
+  result = result.replace(/\\\\+\(/g, "\\(");
+  result = result.replace(/\\\\+\[/g, "\\[");
 
   // 转换 LaTeX 行内数学 \(...\) -> $...$
-  result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => `$${math}$`);
+  // 使用非贪婪匹配，允许内容包含反斜杠
+  result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => {
+    return `$${math}$`;
+  });
 
   // 转换 LaTeX 块级数学 \[...\] -> $$...$$
-  result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `$$${math}$$`);
+  // 使用非贪婪匹配，允许内容包含反斜杠
+  result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => {
+    return `\n$$\n${math}\n$$\n`;
+  });
 
   return result;
 }
@@ -196,66 +204,143 @@ function fixIncompleteMath(content: string): string {
 function wrapUnwrappedMath(content: string): string {
   let result = content;
   
-  // 移除单独的 $ 符号（不是数学公式标记的）
-  // 匹配单独的 $ 后跟非数学内容（如 $---）
-  result = result.replace(/\$---/g, "---");
-  result = result.replace(/\$(\s|$)/gm, "$1");
+  // 常见的 LaTeX 数学命令（按长度排序，长的在前，避免部分匹配）
+  const mathCommands = [
+    '\\begin{aligned}', '\\end{aligned}', '\\begin{cases}', '\\end{cases}',
+    '\\begin{matrix}', '\\end{matrix}', '\\begin{pmatrix}', '\\end{pmatrix}',
+    '\\begin{bmatrix}', '\\end{bmatrix}', '\\begin{vmatrix}', '\\end{vmatrix}',
+    '\\overrightarrow', '\\overleftarrow', '\\overbrace', '\\underbrace',
+    '\\displaystyle', '\\textstyle', '\\scriptstyle', '\\scriptscriptstyle',
+    '\\frac', '\\sqrt', '\\sum', '\\prod', '\\int', '\\oint', '\\iint', '\\iiint',
+    '\\lim', '\\sup', '\\inf', '\\max', '\\min', '\\arg',
+    '\\sin', '\\cos', '\\tan', '\\cot', '\\sec', '\\csc',
+    '\\arcsin', '\\arccos', '\\arctan', '\\sinh', '\\cosh', '\\tanh',
+    '\\log', '\\ln', '\\lg', '\\exp',
+    '\\alpha', '\\beta', '\\gamma', '\\delta', '\\epsilon', '\\varepsilon',
+    '\\zeta', '\\eta', '\\theta', '\\vartheta', '\\iota', '\\kappa',
+    '\\lambda', '\\mu', '\\nu', '\\xi', '\\pi', '\\varpi',
+    '\\rho', '\\varrho', '\\sigma', '\\varsigma', '\\tau', '\\upsilon',
+    '\\phi', '\\varphi', '\\chi', '\\psi', '\\omega',
+    '\\Delta', '\\Gamma', '\\Lambda', '\\Omega', '\\Phi', '\\Pi', '\\Psi',
+    '\\Sigma', '\\Theta', '\\Upsilon', '\\Xi',
+    '\\times', '\\div', '\\pm', '\\mp', '\\cdot', '\\ast', '\\star',
+    '\\leq', '\\geq', '\\neq', '\\approx', '\\equiv', '\\sim', '\\simeq',
+    '\\cong', '\\propto', '\\parallel', '\\perp',
+    '\\in', '\\notin', '\\subset', '\\supset', '\\subseteq', '\\supseteq',
+    '\\cup', '\\cap', '\\emptyset', '\\varnothing', '\\setminus',
+    '\\rightarrow', '\\leftarrow', '\\Rightarrow', '\\Leftarrow',
+    '\\leftrightarrow', '\\Leftrightarrow', '\\mapsto',
+    '\\forall', '\\exists', '\\nexists', '\\therefore', '\\because',
+    '\\partial', '\\nabla', '\\infty', '\\emptyset', '\\varnothing',
+    '\\text', '\\mathrm', '\\mathbf', '\\mathit', '\\mathcal',
+    '\\mathbb', '\\mathfrak', '\\mathsf', '\\mathtt', '\\boldsymbol',
+    '\\left', '\\right', '\\big', '\\Big', '\\bigg', '\\Bigg',
+    '\\bigl', '\\bigr', '\\Bigl', '\\Bigr', '\\biggl', '\\biggr',
+    '\\hat', '\\check', '\\breve', '\\acute', '\\grave', '\\tilde', '\\bar',
+    '\\vec', '\\dot', '\\ddot', '\\dddot', '\\overline', '\\underline',
+  ];
   
-  // 检测包含 LaTeX 数学命令但未包裹的表达式
-  // 常见的 LaTeX 数学命令模式
-  const mathCommandPattern = /\\[a-zA-Z]+\{?[^}]*\}?/g;
+  // 构建数学命令正则表达式（转义特殊字符）
+  const escapedCommands = mathCommands.map(cmd => 
+    cmd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  );
+  const mathCommandPattern = new RegExp(
+    `\\\\(${escapedCommands.join('|')})`,
+    'gi'
+  );
   
   // 按行处理
-  const lines = result.split("\n");
+  const lines = result.split('\n');
   const processedLines = lines.map((line) => {
     const trimmedLine = line.trim();
     
     // 跳过已经包裹的数学公式
-    if (trimmedLine.startsWith("$$") && trimmedLine.endsWith("$$")) {
+    if (trimmedLine.startsWith('$$') && trimmedLine.endsWith('$$')) {
       return line;
     }
-    if (trimmedLine.startsWith("$") && trimmedLine.endsWith("$") && trimmedLine.length > 1) {
+    // 跳过行内数学公式（$...$ 但不是 $$...$$）
+    if (/^\$[^$].*[^$]\$$/.test(trimmedLine)) {
       return line;
     }
     
     // 检查是否包含 LaTeX 数学命令
-    const hasMathCommand = mathCommandPattern.test(line);
-    if (!hasMathCommand) {
+    const mathCommandMatches = line.match(mathCommandPattern);
+    if (!mathCommandMatches || mathCommandMatches.length === 0) {
+      mathCommandPattern.lastIndex = 0;
       return line;
     }
-    
-    // 重置正则表达式
     mathCommandPattern.lastIndex = 0;
     
-    // 如果整行看起来像数学表达式（包含 LaTeX 命令且没有太多中文）
-    const chineseCharCount = (line.match(/[\u4e00-\u9fa5]/g) || []).length;
-    const mathCommandCount = (line.match(/\\[a-zA-Z]+/g) || []).length;
+    const mathCommandCount = mathCommandMatches.length;
     
-    // 如果数学命令数量较多，或者整行主要是数学表达式
-    if (mathCommandCount > 0 && (mathCommandCount >= chineseCharCount || chineseCharCount === 0)) {
+    // 检查行中是否包含数学符号
+    const hasMathOperators = /[=+\-*/^_<>|]/.test(line);
+    
+    // 统计中文字符数量
+    const chineseChars = (line.match(/[\u4e00-\u9fa5]/g) || []).length;
+    
+    // 移除数学命令和常见数学符号后，检查剩余文本
+    const textWithoutMath = line
+      .replace(/\\[a-zA-Z]+\{?[^}]*\}?/g, '')
+      .replace(/[=+\-*/^_<>|()\[\]{}\s,.;:!?]/g, '');
+    
+    // 判断是否为数学表达式
+    // 条件：包含数学命令，且（命令数量>=2 或 有数学符号且无中文 或 移除数学后文本很少）
+    const isLikelyMath = 
+      mathCommandCount > 0 && 
+      (
+        mathCommandCount >= 2 || 
+        (mathCommandCount >= 1 && hasMathOperators && chineseChars === 0) ||
+        (mathCommandCount >= 1 && textWithoutMath.length <= 2 && chineseChars === 0)
+      );
+    
+    if (isLikelyMath) {
       // 检查是否整行都是数学表达式
-      if (trimmedLine.length > 0 && !trimmedLine.match(/^[^\\]*[：:][^\\]*$/)) {
-        // 包裹整行为块级公式
-        const indent = line.match(/^\s*/)?.[0] || "";
+      // 如果移除数学命令和符号后，剩余文本很少或没有，则认为是纯数学表达式
+      const hasSignificantText = textWithoutMath.length > 3 || chineseChars > 0;
+      
+      if (!hasSignificantText) {
+        // 整行是数学表达式，包裹为块级公式
+        const indent = line.match(/^\s*/)?.[0] || '';
         return `${indent}$$${trimmedLine}$$`;
+      } else {
+        // 行内包含数学表达式，尝试包裹数学部分
+        // 使用正则表达式匹配包含数学命令的片段
+        // 匹配模式：反斜杠 + 字母 + 可选的花括号内容 + 可能的数学符号
+        const inlineMathRegex = /(\\[a-zA-Z]+\{?[^}]*\}?[=+\-*/^_<>|()\[\]\s]*)/g;
+        let processedLine = line;
+        const matches: Array<{ match: string; index: number }> = [];
+        
+        let match;
+        while ((match = inlineMathRegex.exec(line)) !== null) {
+          // 检查匹配前后是否已经有 $ 符号
+          const before = line.substring(0, match.index).trim();
+          const after = line.substring(match.index + match[0].length).trim();
+          const beforeEndsWithDollar = before.endsWith('$');
+          const afterStartsWithDollar = after.startsWith('$');
+          
+          if (!beforeEndsWithDollar && !afterStartsWithDollar) {
+            matches.push({ match: match[0], index: match.index });
+          }
+        }
+        
+        // 从后往前替换，避免索引偏移
+        for (let i = matches.length - 1; i >= 0; i--) {
+          const { match: mathMatch, index } = matches[i];
+          processedLine = 
+            processedLine.substring(0, index) + 
+            `$${mathMatch}$` + 
+            processedLine.substring(index + mathMatch.length);
+        }
+        
+        return processedLine;
       }
     }
     
-    // 否则，尝试包裹行内的数学表达式片段
-    // 匹配包含 LaTeX 命令的片段
-    return line.replace(/([^$]*?)(\\[a-zA-Z]+\{[^}]*\}[^$]*?)(?=\s|$|[^\\])/g, (match, prefix, mathPart) => {
-      // 如果数学部分包含常见的数学命令，包裹它
-      if (mathPart.match(/\\times|\\div|\\text\{|\\mathrm\{|\\frac|\\sqrt/)) {
-        // 检查前后是否已经有 $ 符号
-        if (!prefix.trim().endsWith("$") && !mathPart.trim().startsWith("$")) {
-          return `${prefix}$${mathPart}$`;
-        }
-      }
-      return match;
-    });
+    return line;
   });
   
-  return processedLines.join("\n");
+  return processedLines.join('\n');
 }
 
 /**

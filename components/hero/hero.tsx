@@ -4,7 +4,7 @@ import Settings from "../settings/settings";
 
 export default function Hero() {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-2 fixed top-0 w-full">
+    <div className="flex items-center justify-between gap-4 px-4 py-2 w-full">
       <div className="flex flex-row items-center">
         <Image src="/static/laugh-cry.svg" alt="笑哭" width={24} height={24} />
       </div>

@@ -2,63 +2,95 @@
 import Image from "next/image";
 import {
   SVGProps,
-  useRef,
   useLayoutEffect,
   useCallback,
   useState,
+  useRef,
+  useEffect,
 } from "react";
 import { motion } from "motion/react";
+import TextareaAutosize, {
+  TextareaHeightChangeMeta,
+} from "react-textarea-autosize";
+
+const LINE_HEIGHT = 24;
+const SINGLE_LINE_HEIGHT = 56; // px (py-4 top/bottom + line height)
+const MAX_EDITOR_HEIGHT = 256; // px (max-h-64)
 
 interface InputProps {
   input: string;
   setInput: (value: string) => void;
   isStreaming: boolean;
+  onPause?: () => void;
 }
 
-export default function Input({ input, setInput, isStreaming }: InputProps) {
+export default function Input({
+  input,
+  setInput,
+  isStreaming,
+  onPause,
+}: InputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isMultiline, setIsMultiline] = useState(false);
   const [hasAnimated, setHasAnimated] = useState(false);
 
   useLayoutEffect(() => {
-    setHasAnimated(true); // eslint-disable-line
+    setHasAnimated(true);
   }, []);
 
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const computedStyle = window.getComputedStyle(textarea);
-    const lineHeight = parseFloat(computedStyle.lineHeight) || 24;
-    
-    const lines = input.split("\n");
-    const lineCount = lines.length;
-    
-    textarea.style.height = "auto";
-    const scrollHeight = textarea.scrollHeight;
-    
-    const shouldBeMultiline = lineCount > 1 || scrollHeight > lineHeight + 32;
-
-    if (input.trim() === "" && lineCount <= 1) {
+  useEffect(() => {
+    if (!input) {
       setIsMultiline(false);
-      textarea.style.height = "";
-      textarea.rows = 1;
-    } else if (shouldBeMultiline) {
-      setIsMultiline(true);
-      const minHeight = lineCount * lineHeight;
-      const actualHeight = Math.max(scrollHeight, minHeight);
-      textarea.style.height = `${actualHeight}px`;
-      textarea.rows = Math.max(2, lineCount);
-    } else if (isMultiline) {
-      const minHeight = lineCount * lineHeight;
-      const actualHeight = Math.max(scrollHeight, minHeight);
-      textarea.style.height = `${actualHeight}px`;
-      textarea.rows = Math.max(2, lineCount);
-    } else {
-      textarea.style.height = "";
-      textarea.rows = 1;
     }
-  }, [input, isMultiline]);
+  }, [input]);
+
+  const handleHeightChange = useCallback(
+    (height: number, meta: TextareaHeightChangeMeta) => {
+      const textarea = textareaRef.current;
+      const computed = textarea ? window.getComputedStyle(textarea) : null;
+      const paddingTop = computed ? parseFloat(computed.paddingTop) || 0 : 0;
+      const paddingBottom = computed
+        ? parseFloat(computed.paddingBottom) || 0
+        : 0;
+      const baseLineHeight = computed
+        ? parseFloat(computed.lineHeight) || LINE_HEIGHT
+        : LINE_HEIGHT;
+      const rowHeight = meta?.rowHeight || baseLineHeight;
+      const scrollContentHeight = textarea
+        ? Math.max(0, textarea.scrollHeight - paddingTop - paddingBottom)
+        : Math.max(0, height - paddingTop - paddingBottom);
+      const measuredLines = Math.max(
+        1,
+        Math.round(scrollContentHeight / rowHeight)
+      );
+
+      const value = textarea?.value ?? input;
+      const normalized = value.replace(/\r/g, "").replace(/\u00A0/g, " ");
+      const explicitLineCount =
+        normalized === "" ? 1 : normalized.split("\n").length;
+      const stripped = normalized.replace(/[\s\u00A0]/g, "");
+      const hasContent = stripped.length > 0;
+      const hasLineBreak = explicitLineCount > 1;
+      const newlineOnly = hasLineBreak && !hasContent;
+
+      let derivedLines = measuredLines;
+      if (!hasContent) {
+        derivedLines = 1;
+      } else if (newlineOnly) {
+        derivedLines = explicitLineCount;
+      } else if (hasLineBreak) {
+        derivedLines = Math.max(explicitLineCount, measuredLines);
+      }
+
+      const safeHeight = Math.max(height, SINGLE_LINE_HEIGHT);
+      const exceededSingleLine = safeHeight > SINGLE_LINE_HEIGHT + 1;
+      const reachedMaxHeight = safeHeight >= MAX_EDITOR_HEIGHT - 1;
+      const nextMultiline =
+        derivedLines > 1 || exceededSingleLine || reachedMaxHeight;
+      setIsMultiline((prev) => (prev === nextMultiline ? prev : nextMultiline));
+    },
+    [input]
+  );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -72,7 +104,7 @@ export default function Input({ input, setInput, isStreaming }: InputProps) {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         if (input.trim() && !isStreaming) {
-          e.currentTarget.form?.requestSubmit();
+          e.currentTarget.closest("form")?.requestSubmit();
         }
       }
     },
@@ -81,29 +113,39 @@ export default function Input({ input, setInput, isStreaming }: InputProps) {
 
   return (
     <motion.div
+      layout
       initial={{ borderRadius: 28 }}
-      animate={{
-        borderRadius: isMultiline ? 24 : 28,
-      }}
+      animate={{ borderRadius: isMultiline ? 24 : 28 }}
       transition={{
+        layout: hasAnimated
+          ? { duration: 0.2, ease: "easeInOut" }
+          : { duration: 0 },
         borderRadius: hasAnimated
-          ? { type: "spring", stiffness: 300, damping: 26 }
+          ? { type: "spring", stiffness: 260, damping: 30 }
           : { duration: 0 },
       }}
-      className={`group bg-neutral-200/50 dark:bg-neutral-800 relative focus-within:ring-2 focus-within:ring-neutral-200 dark:focus-within:ring-neutral-800 transition-colors focus-within:bg-neutral-100 dark:focus-within:bg-neutral-800/50 overflow-hidden w-full ${
-        isMultiline ? "flex flex-col p-3 pb-14" : "h-14"
+      className={`group bg-neutral-200/50 dark:bg-neutral-800 relative focus-within:ring-2 focus-within:ring-neutral-200 dark:focus-within:ring-neutral-800 transition-all duration-200 focus-within:bg-neutral-100 dark:focus-within:bg-neutral-800/50 w-full ${
+        isMultiline ? "p-3 pb-14" : "h-14"
       }`}
     >
-      <textarea
+      <TextareaAutosize
         ref={textareaRef}
-        rows={1}
-        placeholder="请让 AI 觉得你不是人类"
-        className={`bg-transparent resize-none max-h-64 flex-1 focus:outline-none focus-within:outline-none transition-all duration-200 w-full ${
-          isMultiline ? "px-1" : "h-14 py-4 pl-14 pr-14"
-        }`}
         value={input}
         onChange={handleChange}
+        onHeightChange={handleHeightChange}
         onKeyDown={handleKeyDown}
+        placeholder="请让 AI 觉得你不是人类"
+        minRows={1}
+        maxRows={Math.max(
+          1,
+          Math.floor((MAX_EDITOR_HEIGHT - 16) / LINE_HEIGHT)
+        )}
+        cacheMeasurements
+        className={`min-h-14 bg-transparent focus:outline-none w-full whitespace-pre-wrap wrap-break-word transition-[height] duration-200 text-base empty:placeholder:text-neutral-500 resize-none ${
+          isMultiline
+            ? "px-1 py-1 leading-6 max-h-64 overflow-y-auto"
+            : "pl-14 pr-14 py-4 leading-6 max-h-14"
+        }`}
       />
       <div
         className={`flex items-center justify-between ${
@@ -122,15 +164,31 @@ export default function Input({ input, setInput, isStreaming }: InputProps) {
             height={24}
           />
         </div>
-        <button
-          type="submit"
-          disabled={isStreaming || !input.trim()}
-          className={`rounded-full size-10 bg-neutral-800 dark:bg-neutral-200 text-white dark:text-black flex justify-center items-center disabled:opacity-50 disabled:cursor-not-allowed ${
-            isMultiline ? "" : "absolute -translate-y-1/2 top-1/2 right-2"
-          }`}
-        >
-          <MingcuteArrowUpLine className="size-6" />
-        </button>
+        {isStreaming ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onPause?.();
+            }}
+            className={`rounded-full size-10 bg-neutral-800 dark:bg-neutral-200 text-white dark:text-black flex justify-center items-center hover:opacity-80 transition-opacity ${
+              isMultiline ? "" : "absolute -translate-y-1/2 top-1/2 right-2"
+            }`}
+          >
+            <MaterialSymbolsStop className="size-6" />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!input.trim()}
+            className={`rounded-full size-10 bg-neutral-800 dark:bg-neutral-200 text-white dark:text-black flex justify-center items-center disabled:opacity-50 disabled:cursor-not-allowed ${
+              isMultiline ? "" : "absolute -translate-y-1/2 top-1/2 right-2"
+            }`}
+          >
+            <MingcuteArrowUpLine className="size-6" />
+          </button>
+        )}
       </div>
     </motion.div>
   );
@@ -152,6 +210,20 @@ export function MingcuteArrowUpLine(props: SVGProps<SVGSVGElement>) {
           d="M12.707 3.636a1 1 0 0 0-1.414 0L5.636 9.293a1 1 0 1 0 1.414 1.414L11 6.757V20a1 1 0 1 0 2 0V6.757l3.95 3.95a1 1 0 0 0 1.414-1.414z"
         />
       </g>
+    </svg>
+  );
+}
+
+export function MaterialSymbolsStop(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="1em"
+      height="1em"
+      viewBox="0 0 24 24"
+      {...props}
+    >
+      <path fill="currentColor" d="M6 18V6h12v12z" />
     </svg>
   );
 }
