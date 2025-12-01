@@ -11,6 +11,7 @@ import Hero from "@/components/hero/hero";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ThemeProvider } from "next-themes";
 import dayjs from "dayjs";
+import { Analytics } from "@vercel/analytics/react";
 
 const notoSerifSC = Noto_Serif_SC({
   variable: "--font-noto-serif-sc",
@@ -67,6 +68,7 @@ export default function RootLayout({
             </div>
           </SettingsProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
