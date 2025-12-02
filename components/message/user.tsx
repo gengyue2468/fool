@@ -13,7 +13,7 @@ export default function UserMessage({ content, input }: UserMessageProps) {
     return (
         <div className="flex flex-row items-start gap-2 sm:gap-4 w-full min-h-12 justify-end">
             <div className="flex flex-col items-end justify-start max-w-[85%] sm:max-w-[80%]">
-                <div className="px-3 sm:px-4 py-1.5 rounded-2xl text-black dark:text-white bg-neutral-200 dark:bg-neutral-800 prose prose-sm sm:prose-base prose-neutral dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-headings:font-semibold prose-h1:text-xl overflow-x-auto">
+                <div className="px-3 sm:px-4 py-1.5 rounded-2xl text-black dark:text-white bg-neutral-200 dark:bg-neutral-800 prose prose-base prose-neutral dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-headings:font-semibold prose-h1:text-xl overflow-x-auto">
                     {content}
                 </div>
                 <div className="flex justify-end mt-1">
