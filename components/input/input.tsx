@@ -124,7 +124,7 @@ export default function Input({
           ? { type: "spring", stiffness: 260, damping: 30 }
           : { duration: 0 },
       }}
-      className={`group bg-neutral-200/50 dark:bg-neutral-800 relative focus-within:ring-2 focus-within:ring-neutral-200 dark:focus-within:ring-neutral-800 transition-all duration-200 focus-within:bg-neutral-100 dark:focus-within:bg-neutral-800/50 w-full ${
+      className={`group bg-neutral-200/50 dark:bg-neutral-800 z-50 relative focus-within:ring-2 focus-within:ring-neutral-200 dark:focus-within:ring-neutral-800 transition-all duration-200 focus-within:bg-neutral-100 dark:focus-within:bg-neutral-800/50 w-full ${
         isMultiline ? "p-3 pb-14" : "h-14"
       }`}
     >
@@ -141,7 +141,7 @@ export default function Input({
           Math.floor((MAX_EDITOR_HEIGHT - 16) / LINE_HEIGHT)
         )}
         cacheMeasurements
-        className={`min-h-14 bg-transparent focus:outline-none w-full whitespace-pre-wrap wrap-break-word transition-[height] duration-200 text-base empty:placeholder:text-neutral-500 resize-none ${
+        className={`min-h-14 focus:outline-none w-full whitespace-pre-wrap wrap-break-word transition-[height] duration-200 text-base empty:placeholder:text-neutral-500 resize-none ${
           isMultiline
             ? "px-1 py-1 leading-6 max-h-64 overflow-y-auto"
             : "pl-14 pr-14 py-4 leading-6 max-h-14"

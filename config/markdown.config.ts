@@ -369,6 +369,100 @@ function removeLatexMacros(content: string): string {
 }
 
 /**
+ * 处理换行符，确保Markdown中的换行能正确显示
+ * 将单个换行符转换为两个空格+换行（Markdown标准）
+ * 但保留代码块和数学公式中的原始换行
+ */
+function processLineBreaks(content: string): string {
+  const lines = content.split('\n');
+  const processed: string[] = [];
+  let inCodeBlock = false;
+  let inMathBlock = false;
+  let codeBlockType = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmedLine = line.trim();
+
+    // 检测代码块开始/结束
+    if (trimmedLine.startsWith('```')) {
+      inCodeBlock = !inCodeBlock;
+      if (inCodeBlock) {
+        codeBlockType = trimmedLine.substring(3).trim();
+      }
+      processed.push(line);
+      continue;
+    }
+
+    // 检测数学公式块
+    if (trimmedLine === '$$' || trimmedLine.startsWith('$$')) {
+      inMathBlock = !inMathBlock;
+      processed.push(line);
+      continue;
+    }
+
+    // 在代码块或数学块中，保持原样
+    if (inCodeBlock || inMathBlock) {
+      processed.push(line);
+      continue;
+    }
+
+    // 空行保持原样
+    if (trimmedLine === '') {
+      processed.push(line);
+      continue;
+    }
+
+    // 检查是否是列表项、标题、引用等特殊格式
+    const isListItem = /^[\s]*[-*+]\s/.test(line) || /^[\s]*\d+\.\s/.test(line);
+    const isHeading = /^#+\s/.test(trimmedLine);
+    const isBlockquote = /^>\s/.test(trimmedLine);
+    const isHorizontalRule = /^[-*_]{3,}$/.test(trimmedLine);
+    const isTableRow = /^\|/.test(trimmedLine);
+
+    // 特殊格式保持原样
+    if (isListItem || isHeading || isBlockquote || isHorizontalRule || isTableRow) {
+      processed.push(line);
+      continue;
+    }
+
+    // 检查下一行是否是特殊格式或空行
+    const nextLine = i < lines.length - 1 ? lines[i + 1] : '';
+    const nextTrimmed = nextLine.trim();
+    const nextIsSpecial = 
+      nextTrimmed === '' ||
+      /^#+\s/.test(nextTrimmed) ||
+      /^[-*+]\s/.test(nextTrimmed) ||
+      /^\d+\.\s/.test(nextTrimmed) ||
+      /^>\s/.test(nextTrimmed) ||
+      /^```/.test(nextTrimmed) ||
+      /^\$\$/.test(nextTrimmed) ||
+      /^\|/.test(nextTrimmed);
+
+    // 如果下一行是特殊格式或空行，当前行保持原样
+    if (nextIsSpecial) {
+      processed.push(line);
+      continue;
+    }
+
+    // 普通文本行：如果下一行不是空行且不是特殊格式，添加两个空格
+    // 这样单个换行符会被Markdown渲染为换行
+    if (nextTrimmed !== '' && !nextIsSpecial) {
+      // 检查行尾是否已经有空格
+      if (!line.endsWith('  ')) {
+        processed.push(line + '  ');
+      } else {
+        processed.push(line);
+      }
+    } else {
+      processed.push(line);
+    }
+  }
+
+  return processed.join('\n');
+}
+
+/**
  * 处理 Markdown 内容的主函数
  * 自动检测并处理 LaTeX 文档格式和普通 Markdown
  */
@@ -380,10 +474,13 @@ export function processMarkdownContent(content: string): string {
   // 1. 过滤思考标签
   result = filterThinkTags(result);
 
-  // 2. 移除 LaTeX 宏定义
+  // 2. 处理换行符
+  result = processLineBreaks(result);
+
+  // 3. 移除 LaTeX 宏定义
   result = removeLatexMacros(result);
 
-  // 3. 检测并转换 LaTeX 文档格式
+  // 4. 检测并转换 LaTeX 文档格式
   if (isLatexDocument(result)) {
     result = convertLatexDocument(result);
   } else {
@@ -392,13 +489,13 @@ export function processMarkdownContent(content: string): string {
     result = normalizeMathNotation(result);
   }
 
-  // 4. 修复数学公式块的缩进问题
+  // 5. 修复数学公式块的缩进问题
   result = fixMathBlockIndentation(result);
 
-  // 5. 检测并包裹未包裹的数学表达式
+  // 6. 检测并包裹未包裹的数学表达式
   result = wrapUnwrappedMath(result);
 
-  // 6. 修复未闭合的代码块和数学公式
+  // 7. 修复未闭合的代码块和数学公式
   result = fixIncompleteCodeBlocks(result);
   result = fixIncompleteMath(result);
 

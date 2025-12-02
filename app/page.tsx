@@ -1,31 +1,37 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import { SVGProps } from "react";
-import Loader from "@/components/loader/loader";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useSettings } from "@/contexts/SettingsContext";
-import ReactMarkdown from "react-markdown";
-import {
-  remarkPlugins,
-  rehypePlugins,
-  processMarkdownContent,
-} from "@/config/markdown.config";
+import { processMarkdownContent } from "@/config/markdown.config";
 import "katex/dist/katex.min.css";
 import "./highlight.css";
 import Input from "@/components/input/input";
-import Toolbar from "@/components/toolbar/toolbar";
 import Greeting from "@/components/greeting/greeting";
+import AIMessage from "@/components/message/ai";
+import UserMessage from "@/components/message/user";
+import { motion } from "motion/react";
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  liked?: boolean;
+  copied?: boolean;
+}
 
 export default function Home() {
   const [input, setInput] = useState("");
   const [rawOutput, setRawOutput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [lastQuestion, setLastQuestion] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const { modelId, promptTemplateId, customPrompt } = useSettings();
-  const [copied, setCopied] = useState(false);
-  const [liked, setLiked] = useState<boolean | undefined>(undefined);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
+
+  const clearConversation = useCallback(() => {
+    setConversationHistory([]);
+    setRawOutput("");
+  }, []);
 
   const send = useCallback(
     async (overrideQuestion?: string) => {
@@ -40,17 +46,18 @@ export default function Home() {
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      setLastQuestion(question);
       setRawOutput("");
       setIsStreaming(true);
-      setLiked(undefined);
 
+      const userMessage: Message = { role: "user", content: question };
+      const updatedHistory = [...conversationHistory, userMessage];
+      setConversationHistory(updatedHistory);
       try {
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            messages: [{ role: "user", content: question }],
+            messages: updatedHistory,
             model: modelId,
             promptTemplate: promptTemplateId,
             customPrompt:
@@ -75,12 +82,42 @@ export default function Home() {
         }
 
         const final = decoder.decode();
-        if (final) setRawOutput(text + final);
+        const finalText = final ? text + final : text;
+
+        if (finalText) {
+          const assistantMessage: Message = {
+            role: "assistant",
+            content: finalText,
+            liked: undefined,
+            copied: false,
+          };
+          setConversationHistory([...updatedHistory, assistantMessage]);
+          setRawOutput("");
+          if (!overrideQuestion) {
+            setInput("");
+          }
+        }
       } catch (error: Error | any) {
         if (error?.name === "AbortError") {
           console.log("请求已被用户暂停");
+          if (rawOutput && updatedHistory.length > 0) {
+            const lastMessage = updatedHistory[updatedHistory.length - 1];
+            if (lastMessage.role === "user") {
+              const assistantMessage: Message = {
+                role: "assistant",
+                content: rawOutput,
+                liked: undefined,
+                copied: false,
+              };
+              setConversationHistory([...updatedHistory, assistantMessage]);
+              setRawOutput("");
+            }
+          } else {
+            setConversationHistory(conversationHistory);
+          }
         } else {
           console.error("Error:", error);
+          setConversationHistory(conversationHistory);
           setRawOutput("发生错误，请重试");
         }
       } finally {
@@ -90,7 +127,7 @@ export default function Home() {
         setIsStreaming(false);
       }
     },
-    [input, modelId, promptTemplateId, customPrompt]
+    [input, modelId, promptTemplateId, customPrompt, conversationHistory]
   );
   const pause = useCallback(() => {
     if (!isStreaming) return;
@@ -98,82 +135,258 @@ export default function Home() {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    if (rawOutput && conversationHistory.length > 0) {
+      const lastMessage = conversationHistory[conversationHistory.length - 1];
+      if (lastMessage.role === "user") {
+        const assistantMessage: Message = {
+          role: "assistant",
+          content: rawOutput,
+          liked: undefined,
+          copied: false,
+        };
+        setConversationHistory([...conversationHistory, assistantMessage]);
+        setRawOutput("");
+      }
+    }
     setIsStreaming(false);
-  }, [isStreaming]);
+  }, [isStreaming, rawOutput, conversationHistory]);
+
+  // 自动滚动到最新消息（优化版）
+  const scrollToBottom = useCallback((force = false) => {
+    if (messagesEndRef.current) {
+      // 检查用户是否手动向上滚动
+      // 尝试多个可能的滚动容器
+      const possibleContainers = [
+        window,
+        document.documentElement,
+        document.body,
+        messagesEndRef.current.closest('[class*="overflow"]') as HTMLElement,
+      ].filter(Boolean) as (Window | HTMLElement)[];
+      
+      let shouldScroll = force;
+      
+      if (!force) {
+        for (const container of possibleContainers) {
+          if (container === window) {
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            const scrollHeight = document.documentElement.scrollHeight;
+            const clientHeight = window.innerHeight;
+            const isNearBottom = scrollHeight - scrollTop - clientHeight < 300;
+            if (isNearBottom) {
+              shouldScroll = true;
+              break;
+            }
+          } else if (container instanceof HTMLElement) {
+            const scrollTop = container.scrollTop;
+            const scrollHeight = container.scrollHeight;
+            const clientHeight = container.clientHeight;
+            const isNearBottom = scrollHeight - scrollTop - clientHeight < 300;
+            if (isNearBottom) {
+              shouldScroll = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      if (shouldScroll) {
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+      }
+    }
+  }, []);
+
+  // 只在关键时机滚动：新消息添加
+  const prevHistoryLengthRef = useRef(0);
+  useEffect(() => {
+    // 只在消息数量增加时滚动（新消息添加）
+    if (conversationHistory.length > prevHistoryLengthRef.current) {
+      // 延迟执行，等待DOM更新完成（特别是数学公式渲染）
+      const timer = setTimeout(() => {
+        scrollToBottom(true);
+      }, 200);
+      prevHistoryLengthRef.current = conversationHistory.length;
+      return () => clearTimeout(timer);
+    }
+    prevHistoryLengthRef.current = conversationHistory.length;
+  }, [conversationHistory.length, scrollToBottom]);
+
+  // 流式输出时的滚动（使用节流，减少滚动频率）
+  const scrollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastScrollTimeRef = useRef(0);
+  
+  useEffect(() => {
+    if (isStreaming && rawOutput) {
+      const now = Date.now();
+      // 节流：至少间隔800ms才滚动一次，减少抖动
+      if (now - lastScrollTimeRef.current > 800) {
+        // 清除之前的定时器
+        if (scrollTimerRef.current) {
+          clearTimeout(scrollTimerRef.current);
+        }
+        // 延迟滚动，避免频繁触发
+        scrollTimerRef.current = setTimeout(() => {
+          scrollToBottom();
+          lastScrollTimeRef.current = Date.now();
+        }, 300);
+      }
+    } else if (!isStreaming && scrollTimerRef.current) {
+      // 流式输出结束时，清除定时器并延迟滚动（等待数学公式渲染）
+      clearTimeout(scrollTimerRef.current);
+      scrollTimerRef.current = null;
+      setTimeout(() => {
+        scrollToBottom(true);
+      }, 500);
+    }
+    
+    return () => {
+      if (scrollTimerRef.current) {
+        clearTimeout(scrollTimerRef.current);
+      }
+    };
+  }, [isStreaming, rawOutput, scrollToBottom]);
+
+  // 更新消息状态
+  const updateMessage = useCallback((index: number, updates: Partial<Message>) => {
+    setConversationHistory((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], ...updates };
+      return updated;
+    });
+  }, []);
 
   const output = processMarkdownContent(rawOutput);
 
+  // 获取指定AI消息对应的用户消息（用于重新生成）
+  const getUserMessageForAI = useCallback((aiIndex: number) => {
+    for (let i = aiIndex - 1; i >= 0; i--) {
+      if (conversationHistory[i].role === "user") {
+        return conversationHistory[i].content;
+      }
+    }
+    return "";
+  }, [conversationHistory]);
+
   return (
-    <div className="flex justify-center items-center h-full w-full">
-      <div className="max-w-3xl px-6 py-16 mx-auto w-full">
-       <Greeting />
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            send();
+    <div className="flex flex-col mx-auto max-w-3xl justify-center items-center w-full min-h-full px-4 md:px-0">
+      {conversationHistory.length === 0 && <Greeting />}
+      <div
+        className={
+          conversationHistory.length === 0
+            ? "w-full max-w-3xl mx-auto"
+            : "fixed bottom-0 left-0 right-0 w-full z-10"
+        }
+      >
+        <motion.div
+          layout
+          layoutId="input-container"
+          initial={false}
+          transition={{
+            layout: {
+              type: "spring",
+              stiffness: 400,
+              damping: 35,
+              mass: 0.6,
+            },
           }}
-          className="flex flex-row items-center gap-2 w-full relative"
+          className="max-w-3xl mx-auto"
         >
-          <Input
-            input={input}
-            setInput={setInput}
-            isStreaming={isStreaming}
-            onPause={pause}
-          />
-        </form>
-        <p className="text-center text-sm opacity-50 mt-4">
-          弱智也有可能会犯错，请核查重要信息
-        </p>
-        {(isStreaming || rawOutput) && (
-          <>
-            <div className="mt-6 flex flex-row items-start gap-4 w-full min-h-12">
-              <div className="mt-2 shrink-0 rounded-full size-10 bg-neutral-800 dark:bg-neutral-200 text-white dark:text-black flex justify-center items-center">
-                <SiAiFill className="size-6" />
-              </div>
-              <div className="pt-2 flex-1 prose prose-neutral dark:prose-invert text-black dark:text-white prose-headings:font-semibold prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-pre:bg-neutral-200 dark:prose-pre:bg-neutral-800  prose-pre:rounded-xl overflow-x-auto">
-                <ReactMarkdown
-                  remarkPlugins={remarkPlugins}
-                  rehypePlugins={rehypePlugins}
-                >
-                  {output}
-                </ReactMarkdown>
-                {isStreaming && <Loader />}
-              </div>
-            </div>
-            <Toolbar
+          <div className="px-3 sm:px-6 bg-gradient-to-t from-neutral-100 to-transparent dark:from-neutral-900 dark:to-transparent pt-2">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send();
+            }}
+            className="flex flex-row items-center gap-2 w-full relative bg-neutral-100 dark:bg-neutral-900 rounded-full"
+          >
+            <Input
               input={input}
-              isStreaming={isStreaming}
-              lastQuestion={lastQuestion}
-              rawOutput={rawOutput}
-              send={send}
               setInput={setInput}
-              setCopied={setCopied}
-              setLiked={setLiked}
-              copied={copied}
-              liked={liked}
-              setLastQuestion={setLastQuestion}
-              setRawOutput={setRawOutput}
+              isStreaming={isStreaming}
+              onPause={pause}
             />
-          </>
+          </form>
+          <p className="text-center text-sm opacity-50 py-1.5">
+            弱智也有可能会犯错，请核查重要信息
+          </p>
+          </div>
+        </motion.div>
+      </div>
+      <div className={`max-w-3xl px-3 sm:px-6 mx-auto w-full ${conversationHistory.length > 0 ? 'py-8 pb-40' : 'py-16'}`}>
+
+        {conversationHistory.length > 0 && (
+          <div className="mt-8 space-y-6 pb-4 -mx-0 md:-mx-2">
+            {conversationHistory.map((message, index) => {
+              if (message.role === "user") {
+                return (
+                  <div key={index}>
+                    <UserMessage
+                      content={message.content}
+                      input={message.content}
+                    />
+                  </div>
+                );
+              } else {
+                const processedContent = processMarkdownContent(
+                  message.content
+                );
+                return (
+                  <div key={index}>
+                    <AIMessage
+                      content={processedContent}
+                      isStreaming={false}
+                      rawOutput={message.content}
+                      liked={message.liked}
+                      copied={message.copied}
+                      onLikedChange={(liked) => updateMessage(index, { liked })}
+                      onCopiedChange={(copied) => updateMessage(index, { copied })}
+                      onRegenerate={() => {
+                        const userMsg = getUserMessageForAI(index);
+                        if (userMsg) {
+                          setInput(userMsg);
+                          send(userMsg);
+                        }
+                      }}
+                    />
+                  </div>
+                );
+              }
+            })}
+            {conversationHistory.length > 0 &&
+              conversationHistory[conversationHistory.length - 1].role ===
+              "user" &&
+              (isStreaming || rawOutput) && (
+                <div>
+                  <AIMessage
+                    content={output}
+                    isStreaming={isStreaming}
+                    rawOutput={rawOutput}
+                    liked={undefined}
+                    copied={false}
+                    onLikedChange={() => { }}
+                    onCopiedChange={() => { }}
+                    onRegenerate={() => { }}
+                  />
+                </div>
+              )}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+        {(isStreaming || rawOutput) && conversationHistory.length === 0 && (
+          <div className="mt-4">
+            <AIMessage
+              content={output}
+              isStreaming={isStreaming}
+              rawOutput={rawOutput}
+              liked={undefined}
+              copied={false}
+              onLikedChange={() => { }}
+              onCopiedChange={() => { }}
+              onRegenerate={() => { }}
+            />
+            <div ref={messagesEndRef} />
+          </div>
         )}
       </div>
     </div>
-  );
-}
-
-export function SiAiFill(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="1em"
-      height="1em"
-      viewBox="0 0 24 24"
-      {...props}
-    >
-      <path
-        fill="currentColor"
-        d="m9.96 9.137l.886-3.099c.332-1.16 1.976-1.16 2.308 0l.885 3.099a1.2 1.2 0 0 0 .824.824l3.099.885c1.16.332 1.16 1.976 0 2.308l-3.099.885a1.2 1.2 0 0 0-.824.824l-.885 3.099c-.332 1.16-1.976 1.16-2.308 0l-.885-3.099a1.2 1.2 0 0 0-.824-.824l-3.099-.885c-1.16-.332-1.16-1.976 0-2.308l3.099-.885a1.2 1.2 0 0 0 .824-.824m8.143 7.37c.289-.843 1.504-.844 1.792 0l.026.087l.296 1.188l1.188.297c.96.24.96 1.602 0 1.842l-1.188.297l-.296 1.188c-.24.959-1.603.959-1.843 0l-.297-1.188l-1.188-.297c-.96-.24-.96-1.603 0-1.842l1.188-.297l.297-1.188zm.896 2.29a1 1 0 0 1-.203.203a1 1 0 0 1 .203.203a1 1 0 0 1 .203-.203a1 1 0 0 1-.203-.204M4.104 2.506c.298-.871 1.585-.842 1.818.087l.296 1.188l1.188.297c.96.24.96 1.602 0 1.842l-1.188.297l-.296 1.188c-.24.959-1.603.959-1.843 0l-.297-1.188l-1.188-.297c-.96-.24-.96-1.603 0-1.842l1.188-.297l.297-1.188zM5 4.797a1 1 0 0 1-.203.202A1 1 0 0 1 5 5.203a1 1 0 0 1 .203-.204A1 1 0 0 1 5 4.796"
-      />
-    </svg>
   );
 }

@@ -37,7 +37,7 @@ const STORAGE_KEY = "foolish-settings";
 
 const defaultSettings: Settings = {
   fontType: "sans",
-  modelId: "deepseek/deepseek-v3.2-exp",
+  modelId: "deepseek/deepseek-v3.2",
   promptTemplateId: "silly",
   customPrompt: "",
 };

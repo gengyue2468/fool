@@ -24,7 +24,7 @@ export default function Tooltip({
           <TooltipPrimitive.Content
             side={side}
             sideOffset={sideOffset}
-            className="z-50 rounded-xl bg-neutral-900 dark:bg-neutral-100 px-3 py-1.5 text-sm text-white dark:text-black shadow-md animate-in fade-in-0 zoom-in-95"
+            className="z-50 rounded-lg bg-neutral-900 dark:bg-neutral-100 px-1.5 py-1 font-semibold text-sm text-white dark:text-black shadow-md animate-in fade-in-0 zoom-in-95"
           >
             {content}
           </TooltipPrimitive.Content>

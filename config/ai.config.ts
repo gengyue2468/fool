@@ -1,8 +1,8 @@
 export const availableModels = [
   {
-    id: "deepseek/deepseek-v3.2-exp",
+    id: "deepseek/deepseek-v3.2",
     name: "DeepSeek V3.2",
-    description: "DeepSeek 最新实验版本",
+    description: "DeepSeek 最新3.2版本的满血版",
   },
   {
     id: "zai-org/glm-4.5",
